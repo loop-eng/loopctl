@@ -6,13 +6,15 @@ import (
 )
 
 type CodexParser struct {
-	seenRequests map[string]bool
-	seenCount    int
+	currentGen   map[string]bool
+	previousGen  map[string]bool
+	currentCount int
 }
 
 func NewCodexParser() *CodexParser {
 	return &CodexParser{
-		seenRequests: make(map[string]bool, 256),
+		currentGen:  make(map[string]bool, 256),
+		previousGen: make(map[string]bool),
 	}
 }
 
@@ -93,15 +95,16 @@ func (p *CodexParser) Parse(line []byte) ([]*ParsedEvent, error) {
 		}
 
 		rid := entry.ID
-		if rid != "" && p.seenRequests[rid] {
+		if rid != "" && (p.currentGen[rid] || p.previousGen[rid]) {
 			return nil, nil
 		}
 		if rid != "" {
-			p.seenRequests[rid] = true
-			p.seenCount++
-			if p.seenCount > maxSeenRequests {
-				p.seenRequests = make(map[string]bool, 256)
-				p.seenCount = 0
+			p.currentGen[rid] = true
+			p.currentCount++
+			if p.currentCount > maxSeenRequests {
+				p.previousGen = p.currentGen
+				p.currentGen = make(map[string]bool, 256)
+				p.currentCount = 0
 			}
 		}
 

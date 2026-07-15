@@ -87,6 +87,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ready = true
 		return m, nil
 
+	case model.ExportDoneMsg:
+		return m, nil
+
 	case model.TickMsg:
 		data := m.collector.Snapshot()
 		m.sessions = data.Sessions

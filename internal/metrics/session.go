@@ -109,7 +109,11 @@ func (ss *SessionStore) ProcessEvent(sessionID string, event *parser.ParsedEvent
 	}
 
 	if event.Tokens.Total() > 0 {
-		cost := ss.costCalc.Calculate(event.Tokens, s.Model)
+		model := s.Model
+		if model == "" {
+			model = "claude-sonnet-4-5"
+		}
+		cost := ss.costCalc.Calculate(event.Tokens, model)
 		s.TotalCost += cost
 		s.TotalInput += event.Tokens.InputTokens
 		s.TotalOutput += event.Tokens.OutputTokens
@@ -186,6 +190,9 @@ func (ss *SessionStore) DailyTotal() float64 {
 }
 
 func (ss *SessionStore) TopSessions(n int) []CostEntry {
+	if n <= 0 {
+		return nil
+	}
 	ss.mu.RLock()
 	defer ss.mu.RUnlock()
 

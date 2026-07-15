@@ -25,7 +25,8 @@ type Collector struct {
 	mu     sync.Mutex
 	alerts []model.Alert
 
-	cancel context.CancelFunc
+	cancelMu sync.Mutex
+	cancel   context.CancelFunc
 }
 
 func NewCollector(logger *slog.Logger, cfg *config.Config) *Collector {
@@ -48,7 +49,10 @@ func NewCollector(logger *slog.Logger, cfg *config.Config) *Collector {
 }
 
 func (c *Collector) Start(ctx context.Context) {
-	ctx, c.cancel = context.WithCancel(ctx)
+	ctx, cancel := context.WithCancel(ctx)
+	c.cancelMu.Lock()
+	c.cancel = cancel
+	c.cancelMu.Unlock()
 
 	c.runDiscovery()
 	c.processAllTails()
@@ -57,8 +61,11 @@ func (c *Collector) Start(ctx context.Context) {
 }
 
 func (c *Collector) Close() {
-	if c.cancel != nil {
-		c.cancel()
+	c.cancelMu.Lock()
+	cancel := c.cancel
+	c.cancelMu.Unlock()
+	if cancel != nil {
+		cancel()
 	}
 }
 

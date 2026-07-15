@@ -97,6 +97,7 @@ func (p *ClaudeParser) parseAssistant(entry *claudeEntry) ([]*ParsedEvent, error
 	}
 
 	var events []*ParsedEvent
+	tokensAssigned := false
 	for _, raw := range entry.Message.Content {
 		var c claudeContent
 		if err := json.Unmarshal(raw, &c); err != nil {
@@ -110,10 +111,10 @@ func (p *ClaudeParser) parseAssistant(entry *claudeEntry) ([]*ParsedEvent, error
 			Timestamp: ts,
 			EntryType: "assistant",
 			Model:     entry.Message.Model,
-			Tokens:    tokens,
 		}
-		if len(events) > 0 {
-			ev.Tokens = TokenUsage{}
+		if !tokensAssigned {
+			ev.Tokens = tokens
+			tokensAssigned = true
 		}
 
 		switch c.Type {
@@ -215,7 +216,13 @@ func IsTestCommand(toolInput string) bool {
 }
 
 func parseTimestamp(s string) time.Time {
-	t, _ := time.Parse(time.RFC3339Nano, s)
+	if s == "" {
+		return time.Now()
+	}
+	t, err := time.Parse(time.RFC3339Nano, s)
+	if err != nil {
+		return time.Now()
+	}
 	return t
 }
 
