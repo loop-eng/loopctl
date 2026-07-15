@@ -82,5 +82,9 @@ func setupLogger(cfg *config.Config, verbose bool) *slog.Logger {
 		level = slog.LevelDebug
 	}
 
-	return slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: level}))
+	var w io.Writer = io.Discard
+	if verbose {
+		w = os.Stderr
+	}
+	return slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: level}))
 }

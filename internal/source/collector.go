@@ -81,9 +81,11 @@ func (c *Collector) loop(ctx context.Context) {
 }
 
 func (c *Collector) runDiscovery() {
+	discovered := make(map[string]bool)
 	for _, d := range c.discoverers {
 		sessions := d.Discover(24 * time.Hour)
 		for _, s := range sessions {
+			discovered[s.ID] = true
 			c.registry.Add(s)
 			c.store.InitSession(s.ID, s.Agent, s.ProjectDir, s.PID, s.Active, s.StartedAt)
 
@@ -101,6 +103,13 @@ func (c *Collector) runDiscovery() {
 			}
 		}
 	}
+
+	for id := range c.tailers {
+		if !discovered[id] {
+			delete(c.tailers, id)
+			delete(c.parsers, id)
+		}
+	}
 }
 
 func (c *Collector) processAllTails() {
@@ -113,6 +122,8 @@ func (c *Collector) processAllTails() {
 		lines, err := tailer.ReadNewLines()
 		if err != nil {
 			c.logger.Debug("tail error", "session", sessionID, "error", err)
+		}
+		if len(lines) == 0 {
 			continue
 		}
 

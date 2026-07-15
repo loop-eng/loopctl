@@ -1,6 +1,11 @@
 package app
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"sort"
+	"syscall"
 	"time"
 
 	"charm.land/bubbles/v2/help"
@@ -78,6 +83,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.updateLayout()
+		m.updatePanels()
 		m.ready = true
 		return m, nil
 
@@ -118,6 +124,10 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "escape":
 		m.showHelp = false
 		return m, nil
+	case "K":
+		return m.handleKill()
+	case "e":
+		return m.handleExport()
 	}
 
 	if m.focusedPanel == panelSessions {
@@ -130,6 +140,53 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+func (m Model) handleKill() (tea.Model, tea.Cmd) {
+	idx := m.sessionPanel.SelectedIndex()
+	if idx < 0 || idx >= len(m.sessions) {
+		return m, nil
+	}
+	s := m.sessions[idx]
+	if s.PID <= 0 || !s.Active {
+		return m, nil
+	}
+	pid := s.PID
+	return m, func() tea.Msg {
+		proc, err := os.FindProcess(pid)
+		if err != nil {
+			return nil
+		}
+		proc.Signal(syscall.SIGTERM)
+		return nil
+	}
+}
+
+func (m Model) handleExport() (tea.Model, tea.Cmd) {
+	idx := m.sessionPanel.SelectedIndex()
+	if idx < 0 || idx >= len(m.sessions) {
+		return m, nil
+	}
+	s := m.sessions[idx]
+	return m, func() tea.Msg {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return model.ExportDoneMsg{Err: err}
+		}
+		dir := filepath.Join(home, ".config", "loopctl", "exports")
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return model.ExportDoneMsg{Err: err}
+		}
+		data, err := json.MarshalIndent(s, "", "  ")
+		if err != nil {
+			return model.ExportDoneMsg{Err: err}
+		}
+		path := filepath.Join(dir, s.SessionID+".json")
+		if err := os.WriteFile(path, data, 0644); err != nil {
+			return model.ExportDoneMsg{Err: err}
+		}
+		return model.ExportDoneMsg{Path: path}
+	}
 }
 
 func (m *Model) updateLayout() {
@@ -149,7 +206,11 @@ func (m *Model) updateLayout() {
 	m.sessionPanel.SetSize(m.width, tableHeight)
 	m.costPanel.SetSize(panelWidth, panelHeight)
 	m.contextPanel.SetSize(panelWidth, panelHeight)
-	m.alertPanel.SetSize(m.width-2*panelWidth, panelHeight)
+	alertWidth := m.width - 2*panelWidth
+	if alertWidth < 10 {
+		alertWidth = 10
+	}
+	m.alertPanel.SetSize(alertWidth, panelHeight)
 	m.help.SetWidth(m.width)
 }
 
@@ -162,12 +223,14 @@ func (m *Model) updatePanels() {
 		selected = m.sessions[idx]
 	}
 
+	sorted := make([]model.SessionView, len(m.sessions))
+	copy(sorted, m.sessions)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].TotalCost > sorted[j].TotalCost
+	})
 	var topSessions []model.SessionView
-	for i, s := range m.sessions {
-		if i >= 3 {
-			break
-		}
-		topSessions = append(topSessions, s)
+	for i := 0; i < len(sorted) && i < 3; i++ {
+		topSessions = append(topSessions, sorted[i])
 	}
 
 	m.costPanel.Update(panel.CostData{

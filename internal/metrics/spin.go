@@ -61,6 +61,9 @@ func DefaultSpinConfig() SpinConfig {
 }
 
 func NewSpinDetector(cfg SpinConfig) *SpinDetector {
+	if cfg.WindowSize <= 0 {
+		cfg.WindowSize = 50
+	}
 	return &SpinDetector{
 		cfg:          cfg,
 		recentTools:  make([]toolFingerprint, cfg.WindowSize),
@@ -104,7 +107,11 @@ func (sd *SpinDetector) Check(event *parser.ParsedEvent, sessionCost float64) Sp
 	}
 
 	if r := sd.checkStall(event.Timestamp); r != "" {
+		result.IsSpinning = true
 		result.Reasons = append(result.Reasons, r)
+		if result.Heuristic == "" {
+			result.Heuristic = "stall"
+		}
 	}
 
 	if sessionCost > 0 {

@@ -20,18 +20,16 @@ type SessionPanel struct {
 
 func NewSessionPanel() SessionPanel {
 	cols := defaultColumns(80)
-	t := table.New(
-		table.WithColumns(cols),
-		table.WithRows(nil),
-		table.WithFocused(true),
-		table.WithHeight(10),
-	)
-
 	s := table.DefaultStyles()
 	s.Header = s.Header.Bold(true).BorderBottom(true).BorderStyle(lipgloss.NormalBorder())
 	s.Selected = s.Selected.Background(lipgloss.Color("236")).Foreground(lipgloss.Color("255"))
-	t = table.New(table.WithColumns(cols), table.WithStyles(s), table.WithFocused(true), table.WithHeight(10))
-
+	t := table.New(
+		table.WithColumns(cols),
+		table.WithRows(nil),
+		table.WithStyles(s),
+		table.WithFocused(true),
+		table.WithHeight(10),
+	)
 	return SessionPanel{table: t}
 }
 

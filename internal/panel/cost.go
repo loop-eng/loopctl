@@ -73,6 +73,14 @@ func (p CostPanel) View(focused bool) string {
 	if focused {
 		border = style.FocusedBorder
 	}
-	return border.Width(p.width - 2).Height(p.height - 2).Render(content)
+	w := p.width - 2
+	if w < 1 {
+		w = 1
+	}
+	h := p.height - 2
+	if h < 1 {
+		h = 1
+	}
+	return border.Width(w).Height(h).Render(content)
 }
 

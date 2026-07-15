@@ -44,18 +44,31 @@ func TestContextTrackerNoCompactionOnGradualGrowth(t *testing.T) {
 func TestContextTrackerCacheHitRate(t *testing.T) {
 	ct := NewContextTracker()
 
-	ct.Record(parser.TokenUsage{InputTokens: 100_000, CacheReadTokens: 80_000, OutputTokens: 5000})
+	ct.Record(parser.TokenUsage{InputTokens: 100_000, CacheReadTokens: 50_000, OutputTokens: 5000})
 
 	rate := ct.CacheHitRate()
-	if math.Abs(rate-80.0) > 0.5 {
-		t.Errorf("cache hit rate = %.1f, want ~80.0", rate)
+	if math.Abs(rate-50.0) > 0.5 {
+		t.Errorf("cache hit rate = %.1f, want ~50.0", rate)
+	}
+}
+
+func TestContextTrackerCacheHitRateCapped(t *testing.T) {
+	ct := NewContextTracker()
+
+	for i := 0; i < 10; i++ {
+		ct.Record(parser.TokenUsage{InputTokens: 1000, CacheReadTokens: 5000, OutputTokens: 100})
+	}
+
+	rate := ct.CacheHitRate()
+	if rate > 100 {
+		t.Errorf("cache hit rate = %.1f, should not exceed 100", rate)
 	}
 }
 
 func TestContextTrackerTokenEfficiency(t *testing.T) {
 	ct := NewContextTracker()
 
-	ct.Record(parser.TokenUsage{InputTokens: 100_000, OutputTokens: 25_000})
+	ct.Record(parser.TokenUsage{InputTokens: 80_000, OutputTokens: 20_000})
 
 	eff := ct.TokenEfficiency()
 	if math.Abs(eff-20.0) > 0.5 {
@@ -84,5 +97,32 @@ func TestContextTrackerSetMaxContext(t *testing.T) {
 	pct := ct.FillPercent()
 	if math.Abs(pct-10.0) > 0.5 {
 		t.Errorf("gemini fill = %.1f, want ~10.0 (100k/1M)", pct)
+	}
+}
+
+func TestContextTrackerModelSwitchNoFalseCompaction(t *testing.T) {
+	ct := NewContextTracker()
+
+	ct.SetMaxContext("claude-opus-4-6")
+	ct.Record(parser.TokenUsage{InputTokens: 180_000, OutputTokens: 5000})
+
+	ct.SetMaxContext("gpt-4.1")
+	ct.Record(parser.TokenUsage{InputTokens: 50_000, OutputTokens: 5000})
+
+	if ct.CompactionCount() != 0 {
+		t.Errorf("compaction count = %d, want 0 after model switch", ct.CompactionCount())
+	}
+}
+
+func TestContextTrackerAccumulatesCorrectly(t *testing.T) {
+	ct := NewContextTracker()
+
+	ct.Record(parser.TokenUsage{InputTokens: 1000, OutputTokens: 500, CacheReadTokens: 200})
+	ct.Record(parser.TokenUsage{InputTokens: 2000, OutputTokens: 800, CacheReadTokens: 300})
+
+	eff := ct.TokenEfficiency()
+	expectedEff := float64(500+800) / float64(1000+2000+500+800) * 100
+	if math.Abs(eff-expectedEff) > 0.5 {
+		t.Errorf("token efficiency = %.1f, want ~%.1f", eff, expectedEff)
 	}
 }

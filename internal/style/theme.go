@@ -67,9 +67,18 @@ func ContextStyle(pct float64) lipgloss.Style {
 }
 
 func ContextBar(pct float64, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if pct < 0 {
+		pct = 0
+	}
 	filled := int(pct / 100 * float64(width))
 	if filled > width {
 		filled = width
+	}
+	if filled < 0 {
+		filled = 0
 	}
 	empty := width - filled
 	bar := ""
