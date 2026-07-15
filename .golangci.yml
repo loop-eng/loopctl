@@ -1,0 +1,26 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - unused
+    - ineffassign
+  exclusions:
+    rules:
+      - linters: [errcheck]
+        path: _test\.go
+    settings:
+      errcheck:
+        exclude-functions:
+          - (io.Closer).Close
+          - (*os.File).Close
+          - (net.Conn).Close
+          - os.Remove
+          - os.MkdirAll
+          - fmt.Sscanf
+          - encoding/json.Unmarshal
