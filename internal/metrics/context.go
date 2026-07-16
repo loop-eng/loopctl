@@ -7,15 +7,15 @@ import (
 )
 
 type ContextTracker struct {
-	maxContextTokens int
-	totalInput       int
-	totalOutput      int
-	totalCacheRead   int
-	totalCacheWrite  int
-	compactionCount  int
-	prevInputTokens  int
-	lastModel        string
-	turnCount        int
+	maxContextTokens  int
+	totalInput        int
+	totalOutput       int
+	totalCacheRead    int
+	totalCacheWrite   int
+	compactionCount   int
+	prevContextLoad   int
+	lastModel         string
+	turnCount         int
 }
 
 func NewContextTracker() *ContextTracker {
@@ -34,21 +34,22 @@ func (ct *ContextTracker) Record(tokens parser.TokenUsage) {
 	ct.totalCacheRead += tokens.CacheReadTokens
 	ct.totalCacheWrite += tokens.CacheWriteTokens
 
-	if tokens.InputTokens > 0 {
-		if ct.prevInputTokens > 0 && tokens.InputTokens < ct.prevInputTokens/2 {
+	contextLoad := tokens.InputTokens + tokens.CacheReadTokens + tokens.CacheWriteTokens
+	if contextLoad > 0 {
+		if ct.prevContextLoad > 0 && contextLoad < ct.prevContextLoad/2 {
 			ct.compactionCount++
 		}
-		ct.prevInputTokens = tokens.InputTokens
+		ct.prevContextLoad = contextLoad
 	}
 
 	ct.turnCount++
 }
 
 func (ct *ContextTracker) FillPercent() float64 {
-	if ct.maxContextTokens == 0 || ct.prevInputTokens == 0 {
+	if ct.maxContextTokens == 0 || ct.prevContextLoad == 0 {
 		return 0
 	}
-	pct := float64(ct.prevInputTokens) / float64(ct.maxContextTokens) * 100
+	pct := float64(ct.prevContextLoad) / float64(ct.maxContextTokens) * 100
 	if pct > 100 {
 		pct = 100
 	}
@@ -98,6 +99,6 @@ func (ct *ContextTracker) SetMaxContext(modelName string) {
 
 	// Reset compaction baseline on model switch to avoid false positives
 	if ct.maxContextTokens != oldMax {
-		ct.prevInputTokens = 0
+		ct.prevContextLoad = 0
 	}
 }

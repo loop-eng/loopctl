@@ -18,11 +18,22 @@ func TestContextTrackerFillPercent(t *testing.T) {
 	}
 }
 
+func TestContextTrackerFillPercentWithCache(t *testing.T) {
+	ct := NewContextTracker()
+
+	ct.Record(parser.TokenUsage{InputTokens: 3, CacheReadTokens: 80_000, CacheWriteTokens: 20_000})
+
+	pct := ct.FillPercent()
+	if math.Abs(pct-50.0) > 1.0 {
+		t.Errorf("fill with cache tokens = %.1f, want ~50.0 (100003/200000)", pct)
+	}
+}
+
 func TestContextTrackerCompaction(t *testing.T) {
 	ct := NewContextTracker()
 
-	ct.Record(parser.TokenUsage{InputTokens: 180_000, OutputTokens: 5000})
-	ct.Record(parser.TokenUsage{InputTokens: 50_000, OutputTokens: 5000})
+	ct.Record(parser.TokenUsage{InputTokens: 3, CacheReadTokens: 150_000, CacheWriteTokens: 30_000})
+	ct.Record(parser.TokenUsage{InputTokens: 3, CacheReadTokens: 30_000, CacheWriteTokens: 10_000})
 
 	if ct.CompactionCount() != 1 {
 		t.Errorf("compaction count = %d, want 1", ct.CompactionCount())
@@ -104,10 +115,10 @@ func TestContextTrackerModelSwitchNoFalseCompaction(t *testing.T) {
 	ct := NewContextTracker()
 
 	ct.SetMaxContext("claude-opus-4-6")
-	ct.Record(parser.TokenUsage{InputTokens: 180_000, OutputTokens: 5000})
+	ct.Record(parser.TokenUsage{InputTokens: 3, CacheReadTokens: 150_000, CacheWriteTokens: 30_000})
 
 	ct.SetMaxContext("gpt-4.1")
-	ct.Record(parser.TokenUsage{InputTokens: 50_000, OutputTokens: 5000})
+	ct.Record(parser.TokenUsage{InputTokens: 3, CacheReadTokens: 40_000, CacheWriteTokens: 10_000})
 
 	if ct.CompactionCount() != 0 {
 		t.Errorf("compaction count = %d, want 0 after model switch", ct.CompactionCount())
