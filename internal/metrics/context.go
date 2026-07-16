@@ -57,14 +57,11 @@ func (ct *ContextTracker) FillPercent() float64 {
 }
 
 func (ct *ContextTracker) CacheHitRate() float64 {
-	if ct.totalInput == 0 {
+	totalContext := ct.totalInput + ct.totalCacheRead
+	if totalContext == 0 {
 		return 0
 	}
-	rate := float64(ct.totalCacheRead) / float64(ct.totalInput) * 100
-	if rate > 100 {
-		rate = 100
-	}
-	return rate
+	return float64(ct.totalCacheRead) / float64(totalContext) * 100
 }
 
 func (ct *ContextTracker) TokenEfficiency() float64 {

@@ -55,15 +55,15 @@ func TestContextTrackerNoCompactionOnGradualGrowth(t *testing.T) {
 func TestContextTrackerCacheHitRate(t *testing.T) {
 	ct := NewContextTracker()
 
-	ct.Record(parser.TokenUsage{InputTokens: 100_000, CacheReadTokens: 50_000, OutputTokens: 5000})
+	ct.Record(parser.TokenUsage{InputTokens: 50_000, CacheReadTokens: 50_000, OutputTokens: 5000})
 
 	rate := ct.CacheHitRate()
 	if math.Abs(rate-50.0) > 0.5 {
-		t.Errorf("cache hit rate = %.1f, want ~50.0", rate)
+		t.Errorf("cache hit rate = %.1f, want ~50.0 (50k cached / 100k total input)", rate)
 	}
 }
 
-func TestContextTrackerCacheHitRateCapped(t *testing.T) {
+func TestContextTrackerCacheHitRateFormula(t *testing.T) {
 	ct := NewContextTracker()
 
 	for i := 0; i < 10; i++ {
@@ -71,6 +71,10 @@ func TestContextTrackerCacheHitRateCapped(t *testing.T) {
 	}
 
 	rate := ct.CacheHitRate()
+	expected := float64(50000) / float64(10000+50000) * 100
+	if math.Abs(rate-expected) > 0.5 {
+		t.Errorf("cache hit rate = %.1f, want ~%.1f (50k cached / 60k total)", rate, expected)
+	}
 	if rate > 100 {
 		t.Errorf("cache hit rate = %.1f, should not exceed 100", rate)
 	}

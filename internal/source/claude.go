@@ -98,6 +98,9 @@ type sessionMeta struct {
 }
 
 func readSessionMeta(path string) sessionMeta {
+	if info, err := os.Lstat(path); err != nil || info.Mode()&os.ModeSymlink != 0 {
+		return sessionMeta{}
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		return sessionMeta{}

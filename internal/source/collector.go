@@ -137,6 +137,7 @@ func (c *Collector) processAllTails() {
 		for _, line := range lines {
 			events, err := p.Parse(line)
 			if err != nil {
+				c.logger.Debug("parse error", "session", sessionID, "error", err)
 				continue
 			}
 			for _, ev := range events {

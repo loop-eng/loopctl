@@ -155,9 +155,15 @@ func (m Model) handleKill() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	pid := s.PID
+	if pid <= 1 {
+		return m, nil
+	}
 	return m, func() tea.Msg {
 		proc, err := os.FindProcess(pid)
 		if err != nil {
+			return nil
+		}
+		if err := proc.Signal(syscall.Signal(0)); err != nil {
 			return nil
 		}
 		proc.Signal(syscall.SIGTERM)
@@ -177,15 +183,16 @@ func (m Model) handleExport() (tea.Model, tea.Cmd) {
 			return model.ExportDoneMsg{Err: err}
 		}
 		dir := filepath.Join(home, ".config", "loopctl", "exports")
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := os.MkdirAll(dir, 0700); err != nil {
 			return model.ExportDoneMsg{Err: err}
 		}
 		data, err := json.MarshalIndent(s, "", "  ")
 		if err != nil {
 			return model.ExportDoneMsg{Err: err}
 		}
-		path := filepath.Join(dir, s.SessionID+".json")
-		if err := os.WriteFile(path, data, 0644); err != nil {
+		safeID := filepath.Base(s.SessionID)
+		path := filepath.Join(dir, safeID+".json")
+		if err := os.WriteFile(path, data, 0600); err != nil {
 			return model.ExportDoneMsg{Err: err}
 		}
 		return model.ExportDoneMsg{Path: path}

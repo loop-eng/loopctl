@@ -36,6 +36,14 @@ func (t *Tailer) ReadNewLines() ([][]byte, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	linfo, err := os.Lstat(t.path)
+	if err != nil {
+		return nil, err
+	}
+	if linfo.Mode()&os.ModeSymlink != 0 {
+		return nil, nil
+	}
+
 	f, err := os.Open(t.path)
 	if err != nil {
 		return nil, err
@@ -83,6 +91,10 @@ func (t *Tailer) ReadNewLines() ([][]byte, error) {
 			break
 		}
 		if err != nil {
+			pos, seekErr := f.Seek(0, io.SeekCurrent)
+			if seekErr == nil {
+				t.offset = pos
+			}
 			return lines, err
 		}
 

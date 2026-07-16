@@ -128,7 +128,9 @@ func (ss *SessionStore) ProcessEvent(sessionID string, event *parser.ParsedEvent
 		s.LastToolName = event.ToolName
 		s.IterationCount++
 		for _, f := range event.FilesChanged {
-			s.FilesChanged[f] = true
+			if len(s.FilesChanged) < 10000 {
+				s.FilesChanged[f] = true
+			}
 		}
 	}
 
