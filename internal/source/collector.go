@@ -165,6 +165,15 @@ func (c *Collector) buildAlerts() {
 					Timestamp: time.Now(),
 				})
 			}
+		} else if s.Spin.HasWarnings {
+			for _, reason := range s.Spin.Reasons {
+				c.alerts = append(c.alerts, model.Alert{
+					SessionID: s.SessionID,
+					Severity:  "warning",
+					Message:   filepath.Base(s.ProjectDir) + ": " + reason,
+					Timestamp: time.Now(),
+				})
+			}
 		}
 
 		if c.cfg.Budget.PerSessionUSD > 0 {
@@ -230,6 +239,7 @@ func (c *Collector) Snapshot() model.DataMsg {
 			CacheHitRate:    s.CacheHitRate,
 			TokenEfficiency: s.TokenEfficiency,
 			IsSpinning:      s.Spin.IsSpinning,
+			HasWarnings:     s.Spin.HasWarnings,
 			SpinReasons:     s.Spin.Reasons,
 			TotalInput:      s.TotalInput,
 			TotalOutput:     s.TotalOutput,

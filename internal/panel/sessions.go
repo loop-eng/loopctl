@@ -108,6 +108,9 @@ func statusIcon(s model.SessionView) string {
 	if s.IsSpinning {
 		return style.StatusSpin.Render("⊘ SPIN")
 	}
+	if s.HasWarnings && s.Active {
+		return style.StatusPaused.Render("⚠ Warn")
+	}
 	if s.Active {
 		return style.StatusActive.Render("● Run")
 	}

@@ -10,9 +10,10 @@ import (
 )
 
 type SpinResult struct {
-	IsSpinning bool
-	Reasons    []string
-	Heuristic  string
+	IsSpinning  bool
+	HasWarnings bool
+	Reasons     []string
+	Heuristic   string
 }
 
 type SpinDetector struct {
@@ -77,7 +78,7 @@ func (sd *SpinDetector) Check(event *parser.ParsedEvent, sessionCost float64) Sp
 	switch event.ContentType {
 	case parser.ContentToolUse:
 		sd.recordTool(event)
-		if r := sd.checkRepeatedTools(); r != "" {
+		if r := sd.checkRepeatedTools(event.Timestamp); r != "" {
 			result.IsSpinning = true
 			result.Reasons = append(result.Reasons, r)
 			if result.Heuristic == "" {
@@ -106,12 +107,10 @@ func (sd *SpinDetector) Check(event *parser.ParsedEvent, sessionCost float64) Sp
 		sd.hasActivity = true
 	}
 
+	// Stall is a soft warning — does NOT set IsSpinning
 	if r := sd.checkStall(event.Timestamp); r != "" {
-		result.IsSpinning = true
+		result.HasWarnings = true
 		result.Reasons = append(result.Reasons, r)
-		if result.Heuristic == "" {
-			result.Heuristic = "stall"
-		}
 	}
 
 	if sessionCost > 0 {
@@ -137,22 +136,25 @@ func (sd *SpinDetector) recordTool(event *parser.ParsedEvent) {
 	}
 }
 
-func (sd *SpinDetector) checkRepeatedTools() string {
+// checkRepeatedTools only counts fingerprints within the last 5 minutes.
+// Running `go test` 3 times over 3 hours is normal; 3 times in 2 minutes is spin.
+func (sd *SpinDetector) checkRepeatedTools(now time.Time) string {
 	if sd.toolCount < sd.cfg.RepeatedCalls {
 		return ""
 	}
 
+	cutoff := now.Add(-5 * time.Minute)
 	counts := make(map[string]int)
 	for i := 0; i < sd.toolCount; i++ {
-		h := sd.recentTools[i].hash
-		if h != "" {
-			counts[h]++
+		fp := sd.recentTools[i]
+		if fp.hash != "" && fp.timestamp.After(cutoff) {
+			counts[fp.hash]++
 		}
 	}
 
 	for _, count := range counts {
 		if count >= sd.cfg.RepeatedCalls {
-			return fmt.Sprintf("same tool call repeated %d times (threshold: %d)", count, sd.cfg.RepeatedCalls)
+			return fmt.Sprintf("same tool call repeated %d times in 5 min (threshold: %d)", count, sd.cfg.RepeatedCalls)
 		}
 	}
 	return ""

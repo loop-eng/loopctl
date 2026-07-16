@@ -25,6 +25,7 @@ type SessionView struct {
 	CacheHitRate    float64
 	TokenEfficiency float64
 	IsSpinning      bool
+	HasWarnings     bool
 	SpinReasons     []string
 	TotalInput      int
 	TotalOutput     int
