@@ -92,6 +92,9 @@ func sessionToRow(s model.SessionView) table.Row {
 
 	dur := formatDuration(s.Duration)
 	iters := fmt.Sprintf("%d", s.IterationCount)
+	if s.LTFAvailable {
+		iters = fmt.Sprintf("%d", s.LTFIterationCount)
+	}
 	cost := style.CostStyle(s.TotalCost).Render(fmt.Sprintf("$%.2f", s.TotalCost))
 	ctx := style.ContextStyle(s.ContextFillPct).Render(fmt.Sprintf("%.0f%%", s.ContextFillPct))
 
@@ -114,10 +117,39 @@ func statusIcon(s model.SessionView) string {
 	if s.Active {
 		return style.StatusActive.Render("● Run")
 	}
+	if !s.Active && s.TerminationReason != "" {
+		if label, styled := terminationLabel(s.TerminationReason); label != "" {
+			return styled
+		}
+	}
 	if s.ErrorCount > 0 {
 		return style.StatusFailed.Render("✗ Fail")
 	}
 	return style.StatusComplete.Render("○ Done")
+}
+
+// terminationLabel maps an LTF loop_summary termination_reason to a
+// reason-aware status label. Returns ("", "") for reasons with no special
+// rendering, so the caller falls through to the generic Done/Fail logic.
+func terminationLabel(reason string) (label string, styled string) {
+	switch reason {
+	case "goal_met":
+		return reason, style.StatusActive.Render("✓ Goal met")
+	case "budget_exhausted":
+		return reason, style.StatusFailed.Render("✗ Budget")
+	case "max_iterations":
+		return reason, style.StatusFailed.Render("✗ Max iter")
+	case "user_cancelled":
+		return reason, style.StatusComplete.Render("○ Cancelled")
+	case "spin_detected":
+		return reason, style.StatusSpin.Render("⊘ Spin")
+	case "stall_detected":
+		return reason, style.StatusPaused.Render("⊘ Stall")
+	case "error":
+		return reason, style.StatusFailed.Render("✗ Error")
+	default:
+		return "", ""
+	}
 }
 
 func formatDuration(d time.Duration) string {

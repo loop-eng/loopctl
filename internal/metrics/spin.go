@@ -19,9 +19,9 @@ type SpinResult struct {
 type SpinDetector struct {
 	cfg SpinConfig
 
-	recentTools  []toolFingerprint
-	toolHead     int
-	toolCount    int
+	recentTools []toolFingerprint
+	toolHead    int
+	toolCount   int
 
 	recentErrors []string
 	errorHead    int

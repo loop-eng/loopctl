@@ -128,3 +128,119 @@ func TestSessionStoreInitSessionIdempotent(t *testing.T) {
 		t.Errorf("PID should be updated to 200, got %d", snap[0].PID)
 	}
 }
+
+func TestProcessEvent_CapsErrorMessages(t *testing.T) {
+	ss := NewSessionStore(slog.Default())
+	ss.InitSession("s1", "claude", "/tmp", 0, true, time.Now())
+
+	for i := 0; i < maxErrorMessages+10; i++ {
+		ev := &parser.ParsedEvent{
+			SessionID:   "s1",
+			ContentType: parser.ContentToolResult,
+			IsError:     true,
+			ErrorMsg:    string(rune('a' + i%26)),
+			Timestamp:   time.Now(),
+		}
+		ss.ProcessEvent("s1", ev)
+	}
+
+	snap := ss.Snapshot()
+	if len(snap[0].ErrorMessages) != maxErrorMessages {
+		t.Errorf("expected %d capped error messages, got %d", maxErrorMessages, len(snap[0].ErrorMessages))
+	}
+	if snap[0].ErrorCount != maxErrorMessages+10 {
+		t.Errorf("ErrorCount should track all errors uncapped, got %d", snap[0].ErrorCount)
+	}
+}
+
+func TestSnapshot_ErrorMessagesDefensiveCopy(t *testing.T) {
+	ss := NewSessionStore(slog.Default())
+	ss.InitSession("s1", "claude", "/tmp", 0, true, time.Now())
+	ev := &parser.ParsedEvent{
+		SessionID:   "s1",
+		ContentType: parser.ContentToolResult,
+		IsError:     true,
+		ErrorMsg:    "boom",
+		Timestamp:   time.Now(),
+	}
+	ss.ProcessEvent("s1", ev)
+
+	snap := ss.Snapshot()
+	snap[0].ErrorMessages[0] = "mutated"
+
+	snap2 := ss.Snapshot()
+	if snap2[0].ErrorMessages[0] == "mutated" {
+		t.Fatal("ErrorMessages should be defensively copied in Snapshot")
+	}
+}
+
+func TestApplyLTFEvent_PhaseEventUpdatesIteration(t *testing.T) {
+	ss := NewSessionStore(slog.Default())
+	ss.InitSession("s1", "claude", "/tmp", 0, true, time.Now())
+
+	ss.ApplyLTFEvent("s1", &parser.LTFEvent{SessionID: "s1", Phase: parser.LTFPhaseAct, Iteration: 3})
+
+	snap := ss.Snapshot()
+	if !snap[0].LTFAvailable {
+		t.Error("expected LTFAvailable=true after ApplyLTFEvent")
+	}
+	if snap[0].LTFIterationCount != 3 {
+		t.Errorf("LTFIterationCount = %d, want 3", snap[0].LTFIterationCount)
+	}
+}
+
+func TestApplyLTFEvent_SummaryOverridesIteration(t *testing.T) {
+	ss := NewSessionStore(slog.Default())
+	ss.InitSession("s1", "claude", "/tmp", 0, true, time.Now())
+
+	ss.ApplyLTFEvent("s1", &parser.LTFEvent{SessionID: "s1", Phase: parser.LTFPhaseAct, Iteration: 3})
+	ss.ApplyLTFEvent("s1", &parser.LTFEvent{
+		SessionID:            "s1",
+		IsSummary:            true,
+		TotalIterations:      7,
+		TerminationReason:    "goal_met",
+		VerificationPassRate: 0.9,
+	})
+
+	snap := ss.Snapshot()
+	if snap[0].LTFIterationCount != 7 {
+		t.Errorf("LTFIterationCount = %d, want 7 (summary should override)", snap[0].LTFIterationCount)
+	}
+	if snap[0].TerminationReason != "goal_met" {
+		t.Errorf("TerminationReason = %q, want goal_met", snap[0].TerminationReason)
+	}
+	if snap[0].VerificationPassRate != 0.9 {
+		t.Errorf("VerificationPassRate = %f, want 0.9", snap[0].VerificationPassRate)
+	}
+}
+
+func TestApplyLTFEvent_UnknownSessionIsNoOp(t *testing.T) {
+	ss := NewSessionStore(slog.Default())
+	// Should not panic and should not create a session.
+	ss.ApplyLTFEvent("nonexistent", &parser.LTFEvent{SessionID: "nonexistent", Iteration: 1})
+
+	if len(ss.Snapshot()) != 0 {
+		t.Error("ApplyLTFEvent should not create a session for an unknown ID")
+	}
+}
+
+func TestApplyLTFEvent_NeverAffectsCostOrTokens(t *testing.T) {
+	ss := NewSessionStore(slog.Default())
+	ss.InitSession("s1", "claude", "/tmp", 0, true, time.Now())
+	ss.ProcessEvent("s1", &parser.ParsedEvent{
+		SessionID:   "s1",
+		Model:       "claude-opus-4-6",
+		ContentType: parser.ContentText,
+		Timestamp:   time.Now(),
+		Tokens:      parser.TokenUsage{InputTokens: 1000, OutputTokens: 500},
+	})
+
+	before := ss.Snapshot()[0]
+
+	ss.ApplyLTFEvent("s1", &parser.LTFEvent{SessionID: "s1", Phase: parser.LTFPhaseAct, Iteration: 1})
+
+	after := ss.Snapshot()[0]
+	if before.TotalCost != after.TotalCost || before.TotalInput != after.TotalInput || before.TotalOutput != after.TotalOutput {
+		t.Error("ApplyLTFEvent must never modify cost or token fields")
+	}
+}

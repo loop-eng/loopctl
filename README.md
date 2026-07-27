@@ -4,7 +4,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/loop-eng/loopctl)](https://goreportcard.com/report/github.com/loop-eng/loopctl)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**htop for AI coding agents** — a live terminal dashboard that monitors all your Claude Code, Codex, and Gemini CLI sessions with real-time cost tracking, context health, and spin detection.
+**htop for AI coding agents** — a live terminal dashboard that monitors all your Claude Code and Codex CLI sessions with real-time cost tracking, context health, and spin detection.
 
 ```
 ┌─────────────────────── Sessions Table ───────────────────────────────────┐
@@ -20,13 +20,13 @@
 │ Rate $0.3│ ████░░░░    │ ⚠ data-pipeline: budget 89%                   │
 │ Today $18│ Compact 2   │                                                │
 ├─────────┴──────────────┴────────────────────────────────────────────────┤
-│ [q]uit [K]ill [e]xport [?]help [tab]panel [enter]detail                │
+│ [q]uit [K]ill [e]xport [?]help [tab]panel [enter]detail [/]filter [h]ist │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## The Problem
 
-You're running 3 Claude Code sessions, a Codex task, and maybe Gemini CLI — simultaneously. Right now you have no way to see:
+You're running 3 Claude Code sessions and a Codex task simultaneously. Right now you have no way to see:
 
 - **How much each session is costing** in real-time
 - **Whether any session is spinning** (repeating the same tool call, echoing errors)
@@ -63,6 +63,10 @@ loopctl --config ~/.config/loopctl/config.yaml
 
 LoopCtl auto-discovers Claude Code sessions from `~/.claude/projects/` and Codex CLI sessions from `~/.codex/sessions/`. No setup required.
 
+**Supported sources today:** Claude Code, Codex CLI, plus [LTF](#ltf-trace-integration) trace enrichment for Claude Code sessions.
+**Gemini CLI**: planned, tracked in [#7](https://github.com/loop-eng/loopctl/issues/7) — the on-disk format needs a live verification pass before a parser can be built against it.
+**Cursor**: not supported. Cursor's local session storage is SQLite-based with no documented, stable per-session format — contributions welcome if that changes.
+
 ## Features
 
 ### Live Session Table
@@ -87,7 +91,26 @@ LoopCtl auto-discovers Claude Code sessions from `~/.claude/projects/` and Codex
 ### Alerts Panel
 - Spin detection (repeated tool calls, error echo, cost velocity)
 - Budget threshold warnings (configurable %)
-- Stall detection (no file edits despite ongoing activity)
+- Stall detection (no file edits despite ongoing activity, shown as a warning)
+- Loop-ended alerts when an [LTF trace](#ltf-trace-integration) reports `spin_detected`, `stall_detected`, `error`, or `budget_exhausted`
+
+### Session Detail View
+Press `Enter` on a session for a full-screen breakdown: complete token
+counts (with thousands separators), full file-changed list, full error
+history, spin/warning reasons, and timing — everything the live table
+only summarizes.
+
+### Filter
+Press `/` to narrow the live session table by project name
+(case-insensitive substring match). `Enter` commits the filter, `Esc`
+clears it. Filtering only applies to the live table — see History for
+completed sessions.
+
+### Session History
+Press `h` for a dedicated view of **completed** sessions, separate from
+the live table (which now shows active sessions only). Each row is
+classified as Done, Failed, Killed, or Warned, plus a cost-over-time
+sparkline and aggregate totals for the session.
 
 ### Keyboard Shortcuts
 
@@ -97,12 +120,22 @@ LoopCtl auto-discovers Claude Code sessions from `~/.claude/projects/` and Codex
 | `?` | Toggle help |
 | `Tab` | Cycle panel focus |
 | `↑/k` `↓/j` | Navigate sessions |
-| `Enter` | Session detail |
-| `Esc` | Close overlay |
+| `Enter` | Open session detail |
+| `/` | Filter live sessions by project name |
+| `h` | Toggle session history view |
+| `K` | Kill the selected/open session (SIGTERM) |
+| `e` | Export the selected/open session as JSON |
+| `Esc` | Close overlay / clear filter |
 
 ## Configuration
 
 Default config path: `~/.config/loopctl/config.yaml`
+
+```bash
+loopctl config          # show the config path and whether it exists
+loopctl config init     # create a default config file (fails if one exists)
+loopctl config validate # check the config for issues without launching the TUI
+```
 
 ```yaml
 refresh_rate: "1s"
@@ -133,6 +166,22 @@ logging:
 | `LOOPCTL_BUDGET_PER_SESSION` | Per-session budget threshold ($) |
 | `LOOPCTL_BUDGET_PER_DAY` | Daily budget threshold ($) |
 | `LOOPCTL_LOG_LEVEL` | Log level (debug/info/warn/error) |
+
+A malformed or invalid config never blocks LoopCtl from launching — problems
+are reported to stderr and the affected values fall back to their defaults.
+Run `loopctl config validate` to see exactly what would be corrected.
+
+## LTF Trace Integration
+
+If a project has the [LTF](https://github.com/loop-eng/ltf) Claude Code
+adapter installed (writing `.loop/trace.ltf.jsonl`), LoopCtl automatically
+enriches that session's display with LTF-verified data: a true
+act→verify→decide iteration count (instead of a raw tool-call count) and
+the loop's termination reason (`goal_met`, `budget_exhausted`,
+`spin_detected`, etc.), shown as a reason-aware status icon. LTF is purely
+additive — cost, tokens, and files-changed always come from the native
+session log, never from the trace. Currently Claude Code only; Codex has no
+LTF adapter yet.
 
 ## Spin Detection
 
@@ -165,16 +214,17 @@ Unknown models fall back to Sonnet-tier pricing ($3/$15).
 ## Architecture
 
 ```
-Discovery (claude/codex) → Watcher (fsnotify) → Parser (JSONL) → Metrics (cost/spin/context) → TUI (bubbletea v2)
+Discovery (claude/codex) → Tailer (poll) → Parser (JSONL + LTF) → Metrics (cost/spin/context) → TUI (bubbletea v2)
 ```
 
 - **Discovery**: Scans `~/.claude/projects/` and `~/.codex/sessions/` every 30s. Detects active sessions via `pgrep`/`lsof`.
-- **Parsers**: Normalized event extraction from Claude Code and Codex JSONL formats. Two-generation request dedup prevents double-counting tokens.
+- **Tailing**: Offset-tracked incremental file reads every 2s (polling, not filesystem-event-based).
+- **Parsers**: Normalized event extraction from Claude Code and Codex JSONL formats. Two-generation request dedup prevents double-counting tokens. A separate LTF parser enriches sessions when a `.loop/trace.ltf.jsonl` adapter trace is present.
 - **Cost Calculator**: Longest-prefix model matching with embedded pricing table.
 - **Spin Detector**: Per-session stateful detector with circular buffers (window size 50).
 - **Context Tracker**: Estimates fill % from token usage, detects compactions from input drops.
 - **Session Store**: Thread-safe aggregate with snapshot-based data flow to the TUI.
-- **TUI**: bubbletea v2 with lipgloss v2 styling. 1-second tick refresh via `tea.Tick`.
+- **TUI**: bubbletea v2 with lipgloss v2 styling. Configurable tick refresh via `tea.Tick` (`refresh_rate` in config, default 1s).
 
 ## Part of the loop-eng Ecosystem
 

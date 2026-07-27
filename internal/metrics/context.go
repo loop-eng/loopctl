@@ -7,15 +7,15 @@ import (
 )
 
 type ContextTracker struct {
-	maxContextTokens  int
-	totalInput        int
-	totalOutput       int
-	totalCacheRead    int
-	totalCacheWrite   int
-	compactionCount   int
-	prevContextLoad   int
-	lastModel         string
-	turnCount         int
+	maxContextTokens int
+	totalInput       int
+	totalOutput      int
+	totalCacheRead   int
+	totalCacheWrite  int
+	compactionCount  int
+	prevContextLoad  int
+	lastModel        string
+	turnCount        int
 }
 
 func NewContextTracker() *ContextTracker {

@@ -83,4 +83,3 @@ func (p CostPanel) View(focused bool) string {
 	}
 	return border.Width(w).Height(h).Render(content)
 }
-

@@ -21,10 +21,10 @@ type claudeEntry struct {
 }
 
 type claudeMsg struct {
-	Role    string           `json:"role"`
-	Model   string           `json:"model,omitempty"`
-	Content []claudeContent  `json:"content"`
-	Usage   *claudeUsage     `json:"usage,omitempty"`
+	Role    string          `json:"role"`
+	Model   string          `json:"model,omitempty"`
+	Content []claudeContent `json:"content"`
+	Usage   *claudeUsage    `json:"usage,omitempty"`
 }
 
 type claudeUsage struct {

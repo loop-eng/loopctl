@@ -6,32 +6,43 @@ import (
 )
 
 type SessionView struct {
-	SessionID       string
-	Agent           string
-	ProjectDir      string
-	ProjectName     string
-	Model           string
-	Active          bool
-	PID             int
-	Duration        time.Duration
-	TotalCost       float64
-	BurnRate        float64
-	ToolCallCount   int
-	LastToolName    string
-	IterationCount  int
-	ErrorCount      int
-	ContextFillPct  float64
-	CompactionCount int
-	CacheHitRate    float64
-	TokenEfficiency float64
-	IsSpinning      bool
-	HasWarnings     bool
-	SpinReasons     []string
-	TotalInput      int
-	TotalOutput     int
-	TotalCacheRead  int
-	TotalCacheWrite int
-	FilesChanged    int
+	SessionID        string
+	Agent            string
+	ProjectDir       string
+	ProjectName      string
+	Model            string
+	Active           bool
+	PID              int
+	StartedAt        time.Time
+	LastActivity     time.Time
+	Duration         time.Duration
+	TotalCost        float64
+	BurnRate         float64
+	ToolCallCount    int
+	LastToolName     string
+	IterationCount   int
+	ErrorCount       int
+	ContextFillPct   float64
+	CompactionCount  int
+	CacheHitRate     float64
+	TokenEfficiency  float64
+	IsSpinning       bool
+	HasWarnings      bool
+	SpinReasons      []string
+	TotalInput       int
+	TotalOutput      int
+	TotalCacheRead   int
+	TotalCacheWrite  int
+	FilesChanged     int
+	FilesChangedList []string
+	ErrorMessages    []string
+
+	// LTF enrichment (only populated when a .loop/trace.ltf.jsonl adapter
+	// trace is available for the session's project; see internal/source/ltf.go)
+	LTFAvailable         bool
+	LTFIterationCount    int
+	TerminationReason    string
+	VerificationPassRate float64
 }
 
 type Alert struct {

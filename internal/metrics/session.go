@@ -9,6 +9,8 @@ import (
 	"github.com/loop-eng/loopctl/internal/parser"
 )
 
+const maxErrorMessages = 50
+
 type SessionMetrics struct {
 	SessionID    string
 	Agent        string
@@ -30,6 +32,7 @@ type SessionMetrics struct {
 	ToolCallCount  int
 	LastToolName   string
 	FilesChanged   map[string]bool
+	ErrorMessages  []string // capped ring buffer, most-recent-last, max maxErrorMessages entries
 	IterationCount int
 	ErrorCount     int
 
@@ -39,6 +42,12 @@ type SessionMetrics struct {
 	TokenEfficiency float64
 
 	Spin SpinResult
+
+	// LTF enrichment (see SessionStore.ApplyLTFEvent)
+	LTFAvailable         bool
+	LTFIterationCount    int
+	TerminationReason    string
+	VerificationPassRate float64
 }
 
 type CostEntry struct {
@@ -80,12 +89,12 @@ func (ss *SessionStore) InitSession(id, agent, projectDir string, pid int, activ
 	}
 
 	ss.sessions[id] = &SessionMetrics{
-		SessionID:  id,
-		Agent:      agent,
-		ProjectDir: projectDir,
-		PID:        pid,
-		Active:     active,
-		StartedAt:  startedAt,
+		SessionID:    id,
+		Agent:        agent,
+		ProjectDir:   projectDir,
+		PID:          pid,
+		Active:       active,
+		StartedAt:    startedAt,
 		FilesChanged: make(map[string]bool),
 	}
 	ss.spins[id] = NewSpinDetector(ss.spinCfg)
@@ -136,6 +145,12 @@ func (ss *SessionStore) ProcessEvent(sessionID string, event *parser.ParsedEvent
 
 	if event.IsError {
 		s.ErrorCount++
+		if event.ErrorMsg != "" {
+			s.ErrorMessages = append(s.ErrorMessages, event.ErrorMsg)
+			if len(s.ErrorMessages) > maxErrorMessages {
+				s.ErrorMessages = s.ErrorMessages[len(s.ErrorMessages)-maxErrorMessages:]
+			}
+		}
 	}
 
 	spinResult := ss.spins[sessionID].Check(event, s.TotalCost)
@@ -153,6 +168,42 @@ func (ss *SessionStore) ProcessEvent(sessionID string, event *parser.ParsedEvent
 	}
 }
 
+// ApplyLTFEvent merges supplemental LTF trace data into an already-tracked
+// session. It is a no-op if sessionID is not currently known — e.g. the
+// trace outlives the session, or belongs to a concurrent/older session in
+// the same project directory that isn't registered (yet or anymore).
+//
+// ApplyLTFEvent never modifies TotalCost, TotalInput, TotalOutput,
+// TotalCacheRead, TotalCacheWrite, or FilesChanged — those remain sourced
+// exclusively from the native JSONL parser via ProcessEvent.
+func (ss *SessionStore) ApplyLTFEvent(sessionID string, ev *parser.LTFEvent) {
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+
+	s, ok := ss.sessions[sessionID]
+	if !ok {
+		return
+	}
+
+	s.LTFAvailable = true
+
+	if ev.IsSummary {
+		s.LTFIterationCount = ev.TotalIterations
+		if ev.TerminationReason != "" {
+			s.TerminationReason = ev.TerminationReason
+		}
+		s.VerificationPassRate = ev.VerificationPassRate
+		return
+	}
+
+	if ev.Iteration > s.LTFIterationCount {
+		s.LTFIterationCount = ev.Iteration
+	}
+	if ev.Phase == "terminate" && ev.TerminationReason != "" {
+		s.TerminationReason = ev.TerminationReason
+	}
+}
+
 func (ss *SessionStore) Snapshot() []SessionMetrics {
 	ss.mu.RLock()
 	defer ss.mu.RUnlock()
@@ -164,6 +215,7 @@ func (ss *SessionStore) Snapshot() []SessionMetrics {
 		for k, v := range s.FilesChanged {
 			cp.FilesChanged[k] = v
 		}
+		cp.ErrorMessages = append([]string(nil), s.ErrorMessages...)
 		result = append(result, cp)
 	}
 

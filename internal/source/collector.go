@@ -4,12 +4,13 @@ import (
 	"context"
 	"log/slog"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
-	"github.com/loop-eng/loopctl/internal/model"
 	"github.com/loop-eng/loopctl/internal/config"
 	"github.com/loop-eng/loopctl/internal/metrics"
+	"github.com/loop-eng/loopctl/internal/model"
 	"github.com/loop-eng/loopctl/internal/parser"
 )
 
@@ -22,8 +23,12 @@ type Collector struct {
 	tailers     map[string]*Tailer
 	parsers     map[string]parser.Parser
 
-	mu     sync.Mutex
-	alerts []model.Alert
+	ltfEnricher *LTFEnricher
+	ltfTailers  map[string]*Tailer // keyed by ProjectDir, not session ID
+
+	mu                 sync.Mutex
+	alerts             []model.Alert
+	alertedTermination map[string]bool
 
 	cancelMu sync.Mutex
 	cancel   context.CancelFunc
@@ -38,13 +43,16 @@ func NewCollector(logger *slog.Logger, cfg *config.Config) *Collector {
 	}
 
 	return &Collector{
-		logger:      logger,
-		registry:    NewRegistry(),
-		discoverers: discoverers,
-		store:       metrics.NewSessionStore(logger),
-		cfg:         cfg,
-		tailers:     make(map[string]*Tailer),
-		parsers:     make(map[string]parser.Parser),
+		logger:             logger,
+		registry:           NewRegistry(),
+		discoverers:        discoverers,
+		store:              metrics.NewSessionStore(logger),
+		cfg:                cfg,
+		tailers:            make(map[string]*Tailer),
+		parsers:            make(map[string]parser.Parser),
+		ltfEnricher:        NewLTFEnricher(logger),
+		ltfTailers:         make(map[string]*Tailer),
+		alertedTermination: make(map[string]bool),
 	}
 }
 
@@ -89,6 +97,7 @@ func (c *Collector) loop(ctx context.Context) {
 
 func (c *Collector) runDiscovery() {
 	discovered := make(map[string]bool)
+	discoveredProjects := make(map[string]bool)
 	for _, d := range c.discoverers {
 		sessions := d.Discover(24 * time.Hour)
 		for _, s := range sessions {
@@ -108,6 +117,13 @@ func (c *Collector) runDiscovery() {
 					c.parsers[s.ID] = parser.NewCodexParser()
 				}
 			}
+
+			if s.Agent == "claude" && s.ProjectDir != "" {
+				discoveredProjects[s.ProjectDir] = true
+				if _, exists := c.ltfTailers[s.ProjectDir]; !exists && c.ltfEnricher.Available(s.ProjectDir) {
+					c.ltfTailers[s.ProjectDir] = NewTailer(c.ltfEnricher.TracePath(s.ProjectDir))
+				}
+			}
 		}
 	}
 
@@ -115,6 +131,11 @@ func (c *Collector) runDiscovery() {
 		if !discovered[id] {
 			delete(c.tailers, id)
 			delete(c.parsers, id)
+		}
+	}
+	for dir := range c.ltfTailers {
+		if !discoveredProjects[dir] {
+			delete(c.ltfTailers, dir)
 		}
 	}
 }
@@ -146,7 +167,28 @@ func (c *Collector) processAllTails() {
 		}
 	}
 
+	c.processLTFTails()
 	c.buildAlerts()
+}
+
+func (c *Collector) processLTFTails() {
+	for projectDir, tailer := range c.ltfTailers {
+		lines, err := tailer.ReadNewLines()
+		if err != nil {
+			c.logger.Debug("ltf tail error", "project", projectDir, "error", err)
+		}
+		for _, line := range lines {
+			ev, err := parser.ParseLTFLine(line)
+			if err != nil {
+				c.logger.Debug("ltf parse error", "project", projectDir, "error", err)
+				continue
+			}
+			if ev.SessionID == "" {
+				continue
+			}
+			c.store.ApplyLTFEvent(ev.SessionID, ev)
+		}
+	}
 }
 
 func (c *Collector) buildAlerts() {
@@ -196,6 +238,19 @@ func (c *Collector) buildAlerts() {
 				})
 			}
 		}
+
+		if !s.Active && s.TerminationReason != "" && !c.alertedTermination[s.SessionID] {
+			switch s.TerminationReason {
+			case "spin_detected", "stall_detected", "error", "budget_exhausted":
+				c.alerts = append(c.alerts, model.Alert{
+					SessionID: s.SessionID,
+					Severity:  "warning",
+					Message:   filepath.Base(s.ProjectDir) + ": loop ended (" + s.TerminationReason + ")",
+					Timestamp: time.Now(),
+				})
+			}
+			c.alertedTermination[s.SessionID] = true
+		}
 	}
 }
 
@@ -220,33 +275,47 @@ func (c *Collector) Snapshot() model.DataMsg {
 			}
 		}
 
+		sortedFiles := make([]string, 0, len(s.FilesChanged))
+		for f := range s.FilesChanged {
+			sortedFiles = append(sortedFiles, f)
+		}
+		sort.Strings(sortedFiles)
+
 		views[i] = model.SessionView{
-			SessionID:       s.SessionID,
-			Agent:           s.Agent,
-			ProjectDir:      s.ProjectDir,
-			ProjectName:     filepath.Base(s.ProjectDir),
-			Model:           s.Model,
-			Active:          s.Active,
-			PID:             s.PID,
-			Duration:        duration,
-			TotalCost:       s.TotalCost,
-			BurnRate:        s.BurnRate,
-			ToolCallCount:   s.ToolCallCount,
-			LastToolName:    s.LastToolName,
-			IterationCount:  s.IterationCount,
-			ErrorCount:      s.ErrorCount,
-			ContextFillPct:  s.ContextFillPct,
-			CompactionCount: s.CompactionCount,
-			CacheHitRate:    s.CacheHitRate,
-			TokenEfficiency: s.TokenEfficiency,
-			IsSpinning:      s.Spin.IsSpinning,
-			HasWarnings:     s.Spin.HasWarnings,
-			SpinReasons:     s.Spin.Reasons,
-			TotalInput:      s.TotalInput,
-			TotalOutput:     s.TotalOutput,
-			TotalCacheRead:  s.TotalCacheRead,
-			TotalCacheWrite: s.TotalCacheWrite,
-			FilesChanged:    len(s.FilesChanged),
+			SessionID:            s.SessionID,
+			Agent:                s.Agent,
+			ProjectDir:           s.ProjectDir,
+			ProjectName:          filepath.Base(s.ProjectDir),
+			Model:                s.Model,
+			Active:               s.Active,
+			PID:                  s.PID,
+			StartedAt:            s.StartedAt,
+			LastActivity:         s.LastActivity,
+			Duration:             duration,
+			TotalCost:            s.TotalCost,
+			BurnRate:             s.BurnRate,
+			ToolCallCount:        s.ToolCallCount,
+			LastToolName:         s.LastToolName,
+			IterationCount:       s.IterationCount,
+			ErrorCount:           s.ErrorCount,
+			ContextFillPct:       s.ContextFillPct,
+			CompactionCount:      s.CompactionCount,
+			CacheHitRate:         s.CacheHitRate,
+			TokenEfficiency:      s.TokenEfficiency,
+			IsSpinning:           s.Spin.IsSpinning,
+			HasWarnings:          s.Spin.HasWarnings,
+			SpinReasons:          s.Spin.Reasons,
+			TotalInput:           s.TotalInput,
+			TotalOutput:          s.TotalOutput,
+			TotalCacheRead:       s.TotalCacheRead,
+			TotalCacheWrite:      s.TotalCacheWrite,
+			FilesChanged:         len(s.FilesChanged),
+			FilesChangedList:     sortedFiles,
+			ErrorMessages:        append([]string(nil), s.ErrorMessages...),
+			LTFAvailable:         s.LTFAvailable,
+			LTFIterationCount:    s.LTFIterationCount,
+			TerminationReason:    s.TerminationReason,
+			VerificationPassRate: s.VerificationPassRate,
 		}
 	}
 
