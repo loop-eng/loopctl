@@ -166,7 +166,9 @@ func (m Model) handleKill() (tea.Model, tea.Cmd) {
 		if err := proc.Signal(syscall.Signal(0)); err != nil {
 			return nil
 		}
-		proc.Signal(syscall.SIGTERM)
+		if err := proc.Signal(syscall.SIGTERM); err != nil {
+			return nil
+		}
 		return nil
 	}
 }

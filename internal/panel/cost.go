@@ -64,7 +64,7 @@ func (p CostPanel) View(focused bool) string {
 			if len(name) > 12 {
 				name = name[:9] + "..."
 			}
-			b.WriteString(fmt.Sprintf(" %s $%.2f\n", name, s.TotalCost))
+			fmt.Fprintf(&b, " %s $%.2f\n", name, s.TotalCost)
 		}
 	}
 

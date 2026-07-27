@@ -59,9 +59,9 @@ func (p ContextPanel) View(focused bool) string {
 	b.WriteString("         " + style.ContextBar(p.data.FillPercent, barWidth))
 	b.WriteString("\n")
 
-	b.WriteString(fmt.Sprintf("Compact  %d\n", p.data.CompactionCount))
-	b.WriteString(fmt.Sprintf("Effic    %.0f%%\n", p.data.TokenEfficiency))
-	b.WriteString(fmt.Sprintf("Cache    %.0f%%\n", p.data.CacheHitRate))
+	fmt.Fprintf(&b, "Compact  %d\n", p.data.CompactionCount)
+	fmt.Fprintf(&b, "Effic    %.0f%%\n", p.data.TokenEfficiency)
+	fmt.Fprintf(&b, "Cache    %.0f%%\n", p.data.CacheHitRate)
 
 	border := style.PanelBorder
 	if focused {

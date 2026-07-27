@@ -82,7 +82,7 @@ func setupLogger(cfg *config.Config, verbose bool) *slog.Logger {
 		level = slog.LevelDebug
 	}
 
-	var w io.Writer = io.Discard
+	w := io.Discard
 	if verbose {
 		w = os.Stderr
 	}

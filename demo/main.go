@@ -85,9 +85,16 @@ func main() {
 }
 
 func writeEntry(f *os.File, entry claudeEntry) {
-	data, _ := json.Marshal(entry)
-	f.Write(data)
-	f.Write([]byte("\n"))
+	data, err := json.Marshal(entry)
+	if err != nil {
+		return
+	}
+	if _, err := f.Write(data); err != nil {
+		return
+	}
+	if _, err := f.Write([]byte("\n")); err != nil {
+		return
+	}
 }
 
 func assistantToolUse(sessionID, model, tool string, input any, inputTok, outputTok, cacheRead, cacheWrite int) claudeEntry {
