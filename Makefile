@@ -23,8 +23,9 @@ lint:
 	golangci-lint run ./...
 
 fuzz:
-	go test -fuzz=Fuzz -fuzztime=30s ./internal/parser/
-	go test -fuzz=Fuzz -fuzztime=30s ./internal/source/
+	go test -fuzz=FuzzClaudeParser -fuzztime=30s ./internal/parser/
+	go test -fuzz=FuzzCodexParser -fuzztime=30s ./internal/parser/
+	go test -fuzz=FuzzTailerReadNewLines -fuzztime=30s ./internal/source/
 
 clean:
 	rm -rf bin/ dist/

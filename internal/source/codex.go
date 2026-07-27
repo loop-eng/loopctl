@@ -15,9 +15,16 @@ type CodexDiscoverer struct {
 
 func NewCodexDiscoverer(logger *slog.Logger) *CodexDiscoverer {
 	home, _ := os.UserHomeDir()
+	return NewCodexDiscovererAt(logger, filepath.Join(home, ".codex", "sessions"))
+}
+
+// NewCodexDiscovererAt builds a CodexDiscoverer rooted at an explicit
+// sessions directory instead of $HOME/.codex/sessions — used by tests to
+// point discovery at a temp directory without manipulating $HOME.
+func NewCodexDiscovererAt(logger *slog.Logger, baseDir string) *CodexDiscoverer {
 	return &CodexDiscoverer{
 		logger:  logger,
-		baseDir: filepath.Join(home, ".codex", "sessions"),
+		baseDir: baseDir,
 	}
 }
 
@@ -65,7 +72,6 @@ func (d *CodexDiscoverer) Discover(maxAge time.Duration) []*Session {
 				PID:        pid,
 				Active:     pid > 0,
 				StartedAt:  info.ModTime(),
-				LastEvent:  info.ModTime(),
 			})
 		}
 	}

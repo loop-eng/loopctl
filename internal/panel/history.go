@@ -103,15 +103,16 @@ func (p HistoryPanel) Summary(outcomes map[string]string) string {
 }
 
 func historyColumns(totalWidth int) []table.Column {
-	return []table.Column{
-		{Title: "Project", Width: max(totalWidth/4, 15)},
-		{Title: "Model", Width: 18},
-		{Title: "Ended", Width: 16},
-		{Title: "Duration", Width: 9},
-		{Title: "Iters", Width: 6},
-		{Title: "Cost", Width: 9},
-		{Title: "Outcome", Width: 10},
+	specs := []colSpec{
+		{title: "Project", min: 12, ideal: max(totalWidth/4, 15), priority: 5},
+		{title: "Model", min: 10, ideal: 18, priority: 2},
+		{title: "Ended", min: 8, ideal: 16, priority: 1},
+		{title: "Duration", min: 7, ideal: 9, priority: 3},
+		{title: "Iters", min: 5, ideal: 6, priority: 0},
+		{title: "Cost", min: 7, ideal: 9, priority: 6},
+		{title: "Outcome", min: 7, ideal: 10, priority: 4},
 	}
+	return fitColumns(totalWidth, specs)
 }
 
 func historyToRow(s model.SessionView, outcome string) table.Row {

@@ -65,6 +65,11 @@ type ExportDoneMsg struct {
 	Err  error
 }
 
+type KillDoneMsg struct {
+	ProjectName string
+	Err         error
+}
+
 func FormatPercent(pct float64) string {
 	return fmt.Sprintf("%.0f%%", pct)
 }

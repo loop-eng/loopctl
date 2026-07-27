@@ -13,7 +13,6 @@ type Session struct {
 	PID        int
 	Active     bool
 	StartedAt  time.Time
-	LastEvent  time.Time
 }
 
 type Discoverer interface {

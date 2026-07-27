@@ -56,6 +56,9 @@ type CostEntry struct {
 	Cost       float64
 }
 
+// SessionStore is safe for concurrent use. Lock ordering: callers that also
+// hold Collector.mu (internal/source) must acquire it BEFORE SessionStore.mu
+// — never the reverse — to avoid a future deadlock. See GitHub issue #2.
 type SessionStore struct {
 	mu       sync.RWMutex
 	sessions map[string]*SessionMetrics
@@ -216,6 +219,7 @@ func (ss *SessionStore) Snapshot() []SessionMetrics {
 			cp.FilesChanged[k] = v
 		}
 		cp.ErrorMessages = append([]string(nil), s.ErrorMessages...)
+		cp.Spin.Reasons = append([]string(nil), s.Spin.Reasons...)
 		result = append(result, cp)
 	}
 
@@ -229,13 +233,37 @@ func (ss *SessionStore) Snapshot() []SessionMetrics {
 	return result
 }
 
+// dailyCutoff returns local midnight for "today" — used consistently by
+// DailyTotal and DailyTotalFromSnapshot so both agree on the day boundary.
+func dailyCutoff() time.Time {
+	now := time.Now()
+	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+}
+
 func (ss *SessionStore) DailyTotal() float64 {
 	ss.mu.RLock()
 	defer ss.mu.RUnlock()
 
-	today := time.Now().Truncate(24 * time.Hour)
+	today := dailyCutoff()
 	var total float64
 	for _, s := range ss.sessions {
+		if s.StartedAt.After(today) {
+			total += s.TotalCost
+		}
+	}
+	return total
+}
+
+// DailyTotalFromSnapshot computes the same figure as DailyTotal but from an
+// already-captured snapshot slice, so the result reflects the exact same
+// point-in-time session state as the snapshot's per-session costs instead of
+// a second, independently-locked read taken a moment later. See GitHub
+// issue #1 (Collector.Snapshot previously combined Sessions and DailyTotal
+// from two separate SessionStore locks).
+func DailyTotalFromSnapshot(snap []SessionMetrics) float64 {
+	today := dailyCutoff()
+	var total float64
+	for _, s := range snap {
 		if s.StartedAt.After(today) {
 			total += s.TotalCost
 		}

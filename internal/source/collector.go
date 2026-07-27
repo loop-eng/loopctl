@@ -26,12 +26,17 @@ type Collector struct {
 	ltfEnricher *LTFEnricher
 	ltfTailers  map[string]*Tailer // keyed by ProjectDir, not session ID
 
+	// mu guards alerts and alertedTermination. Lock ordering: if a caller
+	// ever needs both mu and the SessionStore's internal lock, mu must be
+	// acquired first (as buildAlerts already does) — never the reverse.
+	// See GitHub issue #2.
 	mu                 sync.Mutex
 	alerts             []model.Alert
 	alertedTermination map[string]bool
 
 	cancelMu sync.Mutex
 	cancel   context.CancelFunc
+	wg       sync.WaitGroup
 }
 
 func NewCollector(logger *slog.Logger, cfg *config.Config) *Collector {
@@ -56,6 +61,11 @@ func NewCollector(logger *slog.Logger, cfg *config.Config) *Collector {
 	}
 }
 
+// Start begins background discovery/tailing. It is safe to call Start again
+// after Close returns — Close blocks until the previous loop goroutine has
+// fully exited before this method returns, so a second Start's synchronous
+// runDiscovery/processAllTails calls never race with it. See GitHub issue
+// A6 in the Phase 2 adversarial testing plan.
 func (c *Collector) Start(ctx context.Context) {
 	ctx, cancel := context.WithCancel(ctx)
 	c.cancelMu.Lock()
@@ -65,9 +75,14 @@ func (c *Collector) Start(ctx context.Context) {
 	c.runDiscovery()
 	c.processAllTails()
 
+	c.wg.Add(1)
 	go c.loop(ctx)
 }
 
+// Close signals the background loop to stop and blocks until it has
+// actually exited, so tailers/parsers are no longer being mutated by the
+// time Close returns (safe to call Start again afterward, or to tear down
+// the process cleanly).
 func (c *Collector) Close() {
 	c.cancelMu.Lock()
 	cancel := c.cancel
@@ -75,9 +90,11 @@ func (c *Collector) Close() {
 	if cancel != nil {
 		cancel()
 	}
+	c.wg.Wait()
 }
 
 func (c *Collector) loop(ctx context.Context) {
+	defer c.wg.Done()
 	discoveryTicker := time.NewTicker(30 * time.Second)
 	tailTicker := time.NewTicker(2 * time.Second)
 	defer discoveryTicker.Stop()
@@ -326,7 +343,7 @@ func (c *Collector) Snapshot() model.DataMsg {
 
 	return model.DataMsg{
 		Sessions:   views,
-		DailyTotal: c.store.DailyTotal(),
+		DailyTotal: metrics.DailyTotalFromSnapshot(snap),
 		Alerts:     alerts,
 	}
 }

@@ -7,9 +7,8 @@ import (
 )
 
 var (
-	Subtle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	Highlight = lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
-	Bold      = lipgloss.NewStyle().Bold(true)
+	Subtle = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	Bold   = lipgloss.NewStyle().Bold(true)
 
 	StatusActive   = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
 	StatusPaused   = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
@@ -47,10 +46,6 @@ var (
 
 	HelpBar = lipgloss.NewStyle().
 		Foreground(lipgloss.Color("241"))
-
-	Header = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("255"))
 )
 
 func CostStyle(cost float64) lipgloss.Style {

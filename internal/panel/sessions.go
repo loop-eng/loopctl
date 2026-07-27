@@ -63,16 +63,17 @@ func (p SessionPanel) SelectedIndex() int {
 }
 
 func defaultColumns(totalWidth int) []table.Column {
-	return []table.Column{
-		{Title: "Status", Width: 9},
-		{Title: "Project", Width: max(totalWidth/4, 15)},
-		{Title: "Model", Width: 18},
-		{Title: "Duration", Width: 9},
-		{Title: "Iters", Width: 6},
-		{Title: "Cost", Width: 9},
-		{Title: "Context", Width: 10},
-		{Title: "Tool/min", Width: 8},
+	specs := []colSpec{
+		{title: "Status", min: 7, ideal: 9, priority: 5},
+		{title: "Project", min: 12, ideal: max(totalWidth/4, 15), priority: 6},
+		{title: "Model", min: 10, ideal: 18, priority: 3},
+		{title: "Duration", min: 7, ideal: 9, priority: 2},
+		{title: "Iters", min: 5, ideal: 6, priority: 1},
+		{title: "Cost", min: 7, ideal: 9, priority: 7},
+		{title: "Context", min: 7, ideal: 10, priority: 4},
+		{title: "Tool/min", min: 6, ideal: 8, priority: 0},
 	}
+	return fitColumns(totalWidth, specs)
 }
 
 func sessionToRow(s model.SessionView) table.Row {

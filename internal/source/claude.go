@@ -20,9 +20,16 @@ type ClaudeDiscoverer struct {
 
 func NewClaudeDiscoverer(logger *slog.Logger) *ClaudeDiscoverer {
 	home, _ := os.UserHomeDir()
+	return NewClaudeDiscovererAt(logger, filepath.Join(home, ".claude", "projects"))
+}
+
+// NewClaudeDiscovererAt builds a ClaudeDiscoverer rooted at an explicit
+// projects directory instead of $HOME/.claude/projects — used by tests to
+// point discovery at a temp directory without manipulating $HOME.
+func NewClaudeDiscovererAt(logger *slog.Logger, baseDir string) *ClaudeDiscoverer {
 	return &ClaudeDiscoverer{
 		logger:  logger,
-		baseDir: filepath.Join(home, ".claude", "projects"),
+		baseDir: baseDir,
 	}
 }
 
@@ -61,7 +68,7 @@ func (d *ClaudeDiscoverer) Discover(maxAge time.Duration) []*Session {
 			fullPath := filepath.Join(projPath, f.Name())
 
 			pid := findSessionPID(sessionID, fullPath)
-			meta := readSessionMeta(fullPath)
+			meta := readSessionMeta(d.logger, fullPath)
 
 			startedAt := info.ModTime()
 			if meta.Timestamp != "" {
@@ -83,7 +90,6 @@ func (d *ClaudeDiscoverer) Discover(maxAge time.Duration) []*Session {
 				PID:        pid,
 				Active:     pid > 0,
 				StartedAt:  startedAt,
-				LastEvent:  info.ModTime(),
 			})
 		}
 	}
@@ -97,7 +103,7 @@ type sessionMeta struct {
 	Cwd       string `json:"cwd"`
 }
 
-func readSessionMeta(path string) sessionMeta {
+func readSessionMeta(logger *slog.Logger, path string) sessionMeta {
 	if info, err := os.Lstat(path); err != nil || info.Mode()&os.ModeSymlink != 0 {
 		return sessionMeta{}
 	}
@@ -124,6 +130,9 @@ func readSessionMeta(path string) sessionMeta {
 		if meta.Timestamp != "" && meta.Cwd != "" {
 			break
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		logger.Debug("readSessionMeta: scan error, using partial/default metadata", "path", path, "error", err)
 	}
 	return meta
 }

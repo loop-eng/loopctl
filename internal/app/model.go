@@ -62,6 +62,9 @@ type Model struct {
 
 	killedSessions map[string]bool
 
+	statusMsg    string
+	statusExpiry time.Time
+
 	sessions []model.SessionView
 	alerts   []model.Alert
 	daily    float64
@@ -125,6 +128,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case model.ExportDoneMsg:
+		if msg.Err != nil {
+			m.setStatus(fmt.Sprintf("Export failed: %v", msg.Err))
+		} else {
+			m.setStatus("Exported to " + msg.Path)
+		}
+		return m, nil
+
+	case model.KillDoneMsg:
+		if msg.Err != nil {
+			m.setStatus(fmt.Sprintf("Kill failed (%s): %v", msg.ProjectName, msg.Err))
+		} else {
+			m.setStatus("Sent SIGTERM to " + msg.ProjectName)
+		}
 		return m, nil
 
 	case model.TickMsg:
@@ -132,6 +148,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sessions = data.Sessions
 		m.alerts = data.Alerts
 		m.daily = data.DailyTotal
+		if !m.statusExpiry.IsZero() && time.Time(msg).After(m.statusExpiry) {
+			m.statusMsg = ""
+			m.statusExpiry = time.Time{}
+		}
 		m.updatePanels()
 		return m, m.tickCmd()
 	}
@@ -314,31 +334,47 @@ func (m Model) resolveTarget() (model.SessionView, bool) {
 
 func (m Model) handleKill() (tea.Model, tea.Cmd) {
 	s, ok := m.resolveTarget()
-	if !ok || s.PID <= 1 || !s.Active {
+	if !ok {
+		m.setStatus("No session selected")
+		return m, nil
+	}
+	if !s.Active {
+		m.setStatus(s.ProjectName + ": session is not active")
+		return m, nil
+	}
+	if s.PID <= 1 {
+		m.setStatus(s.ProjectName + ": no process to kill")
 		return m, nil
 	}
 	pid := s.PID
+	projectName := s.ProjectName
 	// Best-effort labeling for the History view: records that loopctl sent
 	// SIGTERM, not that the process actually died as a result of it.
 	m.killedSessions[s.SessionID] = true
 	return m, func() tea.Msg {
 		proc, err := os.FindProcess(pid)
 		if err != nil {
-			return nil
+			return model.KillDoneMsg{ProjectName: projectName, Err: err}
 		}
 		if err := proc.Signal(syscall.Signal(0)); err != nil {
-			return nil
+			return model.KillDoneMsg{ProjectName: projectName, Err: fmt.Errorf("process %d already exited", pid)}
 		}
 		if err := proc.Signal(syscall.SIGTERM); err != nil {
-			return nil
+			return model.KillDoneMsg{ProjectName: projectName, Err: err}
 		}
-		return nil
+		return model.KillDoneMsg{ProjectName: projectName}
 	}
+}
+
+func (m *Model) setStatus(msg string) {
+	m.statusMsg = msg
+	m.statusExpiry = time.Now().Add(4 * time.Second)
 }
 
 func (m Model) handleExport() (tea.Model, tea.Cmd) {
 	s, ok := m.resolveTarget()
 	if !ok {
+		m.setStatus("No session selected")
 		return m, nil
 	}
 	return m, func() tea.Msg {
@@ -502,9 +538,12 @@ func (m Model) renderDashboard() string {
 	parts = append(parts, bottom)
 
 	var footer string
-	if m.mode == modeFilter {
+	switch {
+	case m.mode == modeFilter:
 		footer = style.HelpBar.Render(m.filterInput.View())
-	} else {
+	case m.statusMsg != "":
+		footer = style.HelpBar.Render(m.statusMsg)
+	default:
 		footer = style.HelpBar.Render(m.help.View(m.keys))
 	}
 	parts = append(parts, footer)
@@ -521,7 +560,11 @@ func (m Model) renderHelp() string {
 }
 
 func (m Model) renderDetail() string {
-	footer := style.HelpBar.Render("[esc] back  [↑/↓] scroll  [K] kill  [e] export")
+	text := "[esc] back  [↑/↓] scroll  [K] kill  [e] export"
+	if m.statusMsg != "" {
+		text = m.statusMsg
+	}
+	footer := style.HelpBar.Render(text)
 	return lipgloss.JoinVertical(lipgloss.Left, m.detailPanel.View(), footer)
 }
 
