@@ -47,11 +47,21 @@ func NewCollector(logger *slog.Logger, cfg *config.Config) *Collector {
 		discoverers = append(discoverers, NewCodexDiscoverer(logger))
 	}
 
+	store := metrics.NewSessionStore(logger)
+	store.SetSpinConfig(metrics.SpinConfig{
+		RepeatedCalls:      cfg.Spin.RepeatedCalls,
+		ErrorEcho:          cfg.Spin.ErrorEcho,
+		StallMinutes:       cfg.Spin.StallMinutes,
+		CostVelocityPerMin: cfg.Spin.CostVelocityPerMin,
+		// WindowSize is intentionally not exposed via config.yaml; leaving
+		// it zero here lets NewSpinDetector apply its own default (50).
+	})
+
 	return &Collector{
 		logger:             logger,
 		registry:           NewRegistry(),
 		discoverers:        discoverers,
-		store:              metrics.NewSessionStore(logger),
+		store:              store,
 		cfg:                cfg,
 		tailers:            make(map[string]*Tailer),
 		parsers:            make(map[string]parser.Parser),

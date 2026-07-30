@@ -48,6 +48,20 @@ go install github.com/loop-eng/loopctl/cmd/loopctl@latest
 # https://github.com/loop-eng/loopctl/releases
 ```
 
+## Try It
+
+No real agent session handy? Run the bundled simulator:
+
+```bash
+bash demo/trial.sh
+```
+
+Opens the real LoopCtl dashboard against five synthetic sessions running
+concurrently — normal, spin-tool, spin-error, budget, and stall alerts all
+trip within about a minute. Press `q` to quit; cleans up after itself. See
+[demo/README.md](demo/README.md) for manual scenario control and recording
+your own asciinema cast.
+
 ## Quick Start
 
 ```bash
@@ -138,25 +152,25 @@ loopctl config validate # check the config for issues without launching the TUI
 ```
 
 ```yaml
-refresh_rate: "1s"
+refresh_rate: "1s"      # how often the dashboard redraws (Go duration syntax)
 
 budget:
-  per_session_usd: 20.0
-  per_day_usd: 200.0
-  warn_at_percent: 80
+  per_session_usd: 20.0  # sessions above this cost show a budget alert
+  per_day_usd: 200.0     # daily cap across all sessions (local midnight to local midnight)
+  warn_at_percent: 80    # warn once cost crosses this % of per_session_usd
 
 spin:
-  repeated_calls: 3
-  error_echo: 3
-  stall_minutes: 10
-  cost_velocity_per_min: 2.0
+  repeated_calls: 3           # same tool+input called N times in a row -> SPIN
+  error_echo: 3                # same error message N times in a row -> SPIN
+  stall_minutes: 10            # no file edits for N minutes despite activity -> warning
+  cost_velocity_per_min: 2.0   # $/min burn rate that triggers a warning
 
 sources:
-  claude_code: "auto"
-  codex: "auto"
+  claude_code: "auto"    # auto | disabled
+  codex: "auto"          # auto | disabled
 
 logging:
-  level: "info"
+  level: "info"          # debug | info | warn | error
 ```
 
 ### Environment Variable Overrides
@@ -226,6 +240,27 @@ Discovery (claude/codex) → Tailer (poll) → Parser (JSONL + LTF) → Metrics 
 - **Session Store**: Thread-safe aggregate with snapshot-based data flow to the TUI.
 - **TUI**: bubbletea v2 with lipgloss v2 styling. Configurable tick refresh via `tea.Tick` (`refresh_rate` in config, default 1s).
 
+## Troubleshooting
+
+**No sessions showing up.** Confirm `~/.claude/projects/` (or
+`~/.codex/sessions/`) exists and has `.jsonl` files modified in the last
+24 hours — LoopCtl only surfaces recently-active sessions. Check
+`sources.claude_code`/`sources.codex` aren't set to `disabled` in your
+config (`loopctl config validate` will flag this).
+
+**Cost looks wrong for a model.** Unknown model strings fall back to
+Sonnet-tier pricing ($3/$15 per MTok) — see the
+[pricing table](#supported-models--pricing) for what's recognized. A model
+released after your LoopCtl version won't have an exact entry yet.
+
+**Quitting.** Press `q` or `Ctrl+C` in the terminal running LoopCtl to
+exit normally. Sending a signal from outside that terminal (`kill`, a
+process manager, an unattended script) also triggers a clean shutdown —
+LoopCtl exits the dashboard and stops background polling either way.
+
+**Demo data left behind.** If a `demo/trial.sh` or manual `loopctl-demo`
+run didn't clean up after itself, run `bash demo/cleanup.sh`.
+
 ## Part of the loop-eng Ecosystem
 
 | Project | What It Does | Status |
@@ -233,9 +268,9 @@ Discovery (claude/codex) → Tailer (poll) → Parser (JSONL + LTF) → Metrics 
 | [LTF](https://github.com/loop-eng/ltf) | Loop Trace Format — open standard for agent loop telemetry | Shipped |
 | [LoopGuard](https://github.com/loop-eng/loopguard) | Circuit breaker daemon — stop runaways before they burn your budget | Shipped |
 | **LoopCtl** | **htop for AI agents — live terminal dashboard** | **Shipped** |
-| Kit | Scaffold production-ready agent loops in 30s | Planned |
-| Loop-Bench | SWE-bench for loop designs | Planned |
-| LoopReplay | Wireshark for agent loops — record, replay, debug | Planned |
+| [Kit](https://github.com/loop-eng/kit) | Scaffold production-ready agent loops in 30s | In development |
+| [Loop-Bench](https://github.com/loop-eng/loop-bench) | SWE-bench for loop designs | In development |
+| [LoopRelay](https://github.com/loop-eng/looprelay) | Wireshark for agent loops — record, replay, debug | In development |
 
 ## Development
 

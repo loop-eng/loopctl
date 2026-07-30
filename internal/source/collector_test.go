@@ -166,3 +166,43 @@ func TestRunDiscoveryPrunesStaleLTFTailers(t *testing.T) {
 		t.Error("expected stale LTF tailer to be pruned when its project is no longer discovered")
 	}
 }
+
+// TestNewCollectorWiresUserSpinConfig is a regression test for a bug found
+// while building the demo scripts: NewCollector previously always built its
+// SessionStore with metrics.DefaultSpinConfig() and never applied the
+// user's config.yaml `spin:` section at all, so spin.stall_minutes,
+// spin.repeated_calls, etc. had zero effect regardless of what a user (or
+// demo/demo-config.yaml) configured. This proves a custom StallMinutes
+// actually reaches the SpinDetector: a 90-second gap trips a 1-minute
+// threshold but must not trip the 10-minute default.
+func TestNewCollectorWiresUserSpinConfig(t *testing.T) {
+	cfg := config.Default()
+	cfg.Spin.StallMinutes = 1
+	c := NewCollector(slog.Default(), cfg)
+
+	base := time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC)
+	c.store.InitSession("s1", "claude", "/tmp/proj", 0, true, base)
+
+	c.store.ProcessEvent("s1", &parser.ParsedEvent{
+		SessionID:   "s1",
+		ContentType: parser.ContentToolUse,
+		ToolName:    "Edit",
+		Timestamp:   base,
+		Tokens:      parser.TokenUsage{InputTokens: 100, OutputTokens: 50},
+	})
+	c.store.ProcessEvent("s1", &parser.ParsedEvent{
+		SessionID:   "s1",
+		ContentType: parser.ContentToolUse,
+		ToolName:    "Read",
+		Timestamp:   base.Add(90 * time.Second),
+		Tokens:      parser.TokenUsage{InputTokens: 100, OutputTokens: 50},
+	})
+
+	snap := c.Snapshot()
+	if len(snap.Sessions) != 1 {
+		t.Fatalf("expected 1 session, got %d", len(snap.Sessions))
+	}
+	if !snap.Sessions[0].HasWarnings {
+		t.Error("expected a stall warning with a 90s gap and cfg.Spin.StallMinutes=1 — SessionStore is not using the user's spin config")
+	}
+}

@@ -80,6 +80,18 @@ func NewSessionStore(logger *slog.Logger) *SessionStore {
 	}
 }
 
+// SetSpinConfig overrides the SpinConfig used for every SpinDetector created
+// by InitSession from this point forward (sessions already tracked keep
+// their existing detector). Call this once, right after NewSessionStore,
+// before any sessions are discovered — e.g. Collector wires the user's
+// config.yaml `spin:` section through here so it actually takes effect
+// instead of silently always using DefaultSpinConfig().
+func (ss *SessionStore) SetSpinConfig(cfg SpinConfig) {
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+	ss.spinCfg = cfg
+}
+
 func (ss *SessionStore) InitSession(id, agent, projectDir string, pid int, active bool, startedAt time.Time) {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()

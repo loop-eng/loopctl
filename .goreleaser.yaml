@@ -27,7 +27,7 @@ builds:
 
 archives:
   - id: default
-    format: tar.gz
+    formats: [tar.gz]
     name_template: >-
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
 
@@ -46,6 +46,8 @@ brews:
   - repository:
       owner: loop-eng
       name: homebrew-tap
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    directory: Formula
     homepage: https://github.com/loop-eng/loopctl
     description: "htop for AI coding agents — live terminal dashboard"
     license: MIT

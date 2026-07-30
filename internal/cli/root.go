@@ -72,6 +72,18 @@ func runTUI(cmd *cobra.Command, args []string) error {
 	model := app.New(collector, refreshRate)
 
 	p := tea.NewProgram(model)
+
+	// signal.NotifyContext's ctx only governs the collector above — without
+	// this, an external SIGINT/SIGTERM (e.g. `kill`, a process manager, a
+	// script that isn't attached to this terminal) would stop background
+	// polling but leave the TUI running and p.Run() blocked forever. An
+	// interactive Ctrl+C is unaffected by this goroutine — bubbletea's raw
+	// mode already delivers it as a KeyPressMsg handled in app.Model.
+	go func() {
+		<-ctx.Done()
+		p.Quit()
+	}()
+
 	_, err = p.Run()
 	return err
 }

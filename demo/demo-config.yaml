@@ -1,0 +1,22 @@
+# Config used by demo/trial.sh and demo/record.sh — lowers budget and
+# stall thresholds so those alerts can trip inside a ~60 second demo
+# window instead of production defaults ($20/session, 80%, 10 minutes).
+refresh_rate: "1s"
+
+budget:
+  per_session_usd: 4.0
+  per_day_usd: 200.0
+  warn_at_percent: 60
+
+spin:
+  repeated_calls: 3
+  error_echo: 3
+  stall_minutes: 1
+  cost_velocity_per_min: 2.0
+
+sources:
+  claude_code: "auto"
+  codex: "auto"
+
+logging:
+  level: "info"
